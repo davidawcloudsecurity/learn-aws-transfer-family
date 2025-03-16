@@ -119,7 +119,7 @@ resource "aws_lambda_function" "transfer_auth_lambda" {
 resource "aws_transfer_server" "ftps_server" {
   endpoint_type         = "VPC"
   protocols             = ["FTPS"]
-  identity_provider_type = "CUSTOM"
+  identity_provider_type = "AWS_LAMBDA"
   function              = aws_lambda_function.transfer_auth_lambda.arn
 
   protocol_details {
