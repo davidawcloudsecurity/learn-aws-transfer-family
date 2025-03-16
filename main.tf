@@ -319,9 +319,6 @@ resource "aws_s3_bucket" "ftps_bucket" {
   # No need for provider specification since we're using us-east-1 as the main region
 }
 
-# Data source to get the current AWS account ID
-data "aws_caller_identity" "current" {}
-
 # Security Group for Windows EC2 Instance
 resource "aws_security_group" "windows_sg" {
   name        = "windows-sg"
