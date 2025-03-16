@@ -176,6 +176,15 @@ data "archive_file" "lambda_zip_data" {
   output_path = "${path.module}/transfer_auth_lambda.zip"
 }
 
+# Lambda permission for Transfer service
+resource "aws_lambda_permission" "transfer_invoke_lambda" {
+  statement_id  = "AllowTransferInvocation"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.transfer_auth_lambda.function_name
+  principal     = "transfer.amazonaws.com"
+  source_arn    = aws_transfer_server.ftps_server.arn
+}
+
 # Lambda function using the dynamically created ZIP
 resource "aws_lambda_function" "transfer_auth_lambda" {
   filename         = data.archive_file.lambda_zip_data.output_path
