@@ -98,16 +98,94 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Lambda function for custom authentication
-resource "aws_lambda_function" "transfer_auth_lambda" {
-  filename      = "transfer_auth_lambda.zip" # You'll need to create this zip with the Lambda code
-  function_name = "transfer-auth-handler"
-  role          = aws_iam_role.transfer_lambda_role.arn
-  handler       = "index.handler"
-  runtime       = "nodejs18.x"
-  timeout       = 30
+# Create a local file with the Lambda code
+resource "local_file" "lambda_source" {
+  content  = <<-EOT
+    // AWS Lambda function for custom identity provider with username/password auth
+    exports.handler = async (event) => {
+      console.log("Authentication event:", JSON.stringify(event));
+      
+      // Sample user configurations - in production, store these in a database or AWS Secrets Manager
+      const users = {
+        "testuser": {
+          Password: "StrongPassword123!",
+          Role: "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/transfer-user-role",
+          HomeDirectory: "/ftps-bucket/testuser",
+          // Optional: For virtual folders
+          HomeDirectoryType: "LOGICAL",
+          HomeDirectoryMappings: [
+            {
+              Entry: "/",
+              Target: "/ftps-bucket/testuser"
+            }
+          ]
+        }
+      };
+      
+      // Extract the provided credentials
+      const username = event.username;
+      const password = event.password;
+      
+      console.log(`Authenticating user: $${username}`);
+      
+      // Check if user exists and password matches
+      if (users[username] && users[username].Password === password) {
+        console.log("Authentication successful");
+        
+        // Return the successful response with user configuration
+        return {
+          Role: users[username].Role,
+          HomeDirectory: users[username].HomeDirectory,
+          HomeDirectoryType: users[username].HomeDirectoryType,
+          HomeDirectoryMappings: users[username].HomeDirectoryMappings
+        };
+      }
+      
+      // Authentication failed
+      console.log("Authentication failed");
+      return {
+        Message: "Authentication failed"
+      };
+    };
+  EOT
+  filename = "${path.module}/lambda/index.js"
+}
 
-  # Add environment variables if needed
+# Data source to get the current AWS account ID
+data "aws_caller_identity" "current" {}
+
+# Null resource to create the ZIP file
+resource "null_resource" "lambda_zip" {
+  depends_on = [local_file.lambda_source]
+
+  provisioner "local-exec" {
+    command = "cd ${path.module}/lambda && zip -r ../transfer_auth_lambda.zip index.js"
+  }
+
+  # Trigger recreation whenever the source file changes
+  triggers = {
+    source_code_hash = local_file.lambda_source.content_base64sha256
+  }
+}
+
+# Data source for the ZIP file
+data "archive_file" "lambda_zip_data" {
+  depends_on  = [null_resource.lambda_zip]
+  type        = "zip"
+  source_dir  = "${path.module}/lambda"
+  output_path = "${path.module}/transfer_auth_lambda.zip"
+}
+
+# Lambda function using the dynamically created ZIP
+resource "aws_lambda_function" "transfer_auth_lambda" {
+  filename         = data.archive_file.lambda_zip_data.output_path
+  function_name    = "transfer-auth-handler"
+  role             = aws_iam_role.transfer_lambda_role.arn
+  handler          = "index.handler"
+  runtime          = "nodejs18.x"
+  timeout          = 30
+  source_code_hash = data.archive_file.lambda_zip_data.output_base64sha256
+
   environment {
     variables = {
       LOG_LEVEL = "INFO"
