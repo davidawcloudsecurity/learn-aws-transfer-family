@@ -103,7 +103,7 @@ resource "aws_security_group" "windows_sg" {
     from_port   = 3389
     to_port     = 3389
     protocol    = "tcp"
-    cidr_blocks = ["YOUR_IP/32"]  # Replace with your public IP
+    cidr_blocks = [aws_subnet.private.cidr_block]
   }
 
   # Allow outbound to NLB
