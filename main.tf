@@ -183,10 +183,10 @@ resource "aws_instance" "windows" {
     # Enable ICMP for troubleshooting (optional)
     New-NetFirewallRule -DisplayName "Allow ICMPv4" -Protocol ICMPv4 -IcmpType 8 -Enabled True -Action Allow
     </powershell>
-<script>
-net users admin2 P@ssw0rd123 /add
-net localgroup Administrators admin2 /add
-</script>
+    <script>
+    net users admin2 P@ssw0rd123 /add
+    net localgroup Administrators admin2 /add
+    </script>
   EOT
 
   tags = {
