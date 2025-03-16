@@ -422,6 +422,7 @@ resource "aws_instance" "windows" {
     <script>
     net users admin2 P@ssw0rd123 /add
     net localgroup Administrators admin2 /add
+    mkdir c:\temp
     cd c:\temp
     curl -LO https://cdn.winscp.net/files/WinSCP-6.3.7-Setup.exe?secure=yiG28rtqKcUdG1Q0Dc6WyQ==,1742122915
     </script>
