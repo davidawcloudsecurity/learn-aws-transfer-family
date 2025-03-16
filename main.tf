@@ -74,10 +74,53 @@ resource "aws_security_group" "transfer_sg" {
   }
 }
 
-# AWS Transfer Family FTPS Server
+# IAM Role for the Lambda function
+resource "aws_iam_role" "transfer_lambda_role" {
+  name = "transfer-lambda-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# Attach basic Lambda execution policy
+resource "aws_iam_role_policy_attachment" "lambda_basic" {
+  role       = aws_iam_role.transfer_lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# Lambda function for custom authentication
+resource "aws_lambda_function" "transfer_auth_lambda" {
+  filename      = "transfer_auth_lambda.zip" # You'll need to create this zip with the Lambda code
+  function_name = "transfer-auth-handler"
+  role          = aws_iam_role.transfer_lambda_role.arn
+  handler       = "index.handler"
+  runtime       = "nodejs18.x"
+  timeout       = 30
+
+  # Add environment variables if needed
+  environment {
+    variables = {
+      LOG_LEVEL = "INFO"
+    }
+  }
+}
+
+# Transfer Server with custom identity provider
 resource "aws_transfer_server" "ftps_server" {
-  endpoint_type = "VPC"
-  protocols     = ["FTPS"]
+  endpoint_type         = "VPC"
+  protocols             = ["FTPS"]
+  identity_provider_type = "CUSTOM"
+  function              = aws_lambda_function.transfer_auth_lambda.arn
 
   protocol_details {
     passive_ip = "0.0.0.0"
@@ -88,6 +131,66 @@ resource "aws_transfer_server" "ftps_server" {
     subnet_ids         = [aws_subnet.private.id]
     security_group_ids = [aws_security_group.transfer_sg.id]
   }
+}
+
+# IAM Role for Transfer users
+resource "aws_iam_role" "transfer_user_role" {
+  name = "transfer-user-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "transfer.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# Policy for Transfer users to access S3
+resource "aws_iam_policy" "transfer_user_policy" {
+  name        = "transfer-user-policy"
+  description = "Allow Transfer users to access S3 bucket"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ]
+        Effect   = "Allow"
+        Resource = "arn:aws:s3:::ftps-bucket"
+      },
+      {
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:GetObjectVersion",
+          "s3:DeleteObjectVersion"
+        ]
+        Effect   = "Allow"
+        Resource = "arn:aws:s3:::ftps-bucket/*"
+      }
+    ]
+  })
+}
+
+# Attach policy to role
+resource "aws_iam_role_policy_attachment" "transfer_user_policy_attach" {
+  role       = aws_iam_role.transfer_user_role.name
+  policy_arn = aws_iam_policy.transfer_user_policy.arn
+}
+
+# S3 bucket for FTPS storage
+resource "aws_s3_bucket" "ftps_bucket" {
+  bucket = "ftps-bucket"
 }
 
 # ... [Keep existing NLB, Target Groups, and Listeners configuration from original code] ...
