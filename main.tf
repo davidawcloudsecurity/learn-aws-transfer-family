@@ -193,12 +193,59 @@ resource "aws_lambda_function" "transfer_auth_lambda" {
   }
 }
 
+# Create a directory for the certificate
+resource "null_resource" "create_cert_directory" {
+  provisioner "local-exec" {
+    command = "mkdir -p ${path.module}/certs"
+  }
+}
+
+# Generate a self-signed certificate using OpenSSL
+resource "null_resource" "generate_self_signed_cert" {
+  depends_on = [null_resource.create_cert_directory]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      openssl req -x509 -newkey rsa:2048 -keyout ${path.module}/certs/private.key -out ${path.module}/certs/certificate.pem -days 365 -nodes -subj "/CN=transfer.example.com" -addext "subjectAltName=DNS:transfer.example.com"
+    EOT
+  }
+
+  # Trigger recreation if the certificate needs to be regenerated
+  triggers = {
+    always_run = "${timestamp()}"  # Use with caution: will regenerate on every apply
+  }
+}
+
+# Import the certificate into ACM
+resource "null_resource" "import_cert_to_acm" {
+  depends_on = [null_resource.generate_self_signed_cert]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      CERT_ARN=$(aws acm import-certificate \
+        --certificate fileb://${path.module}/certs/certificate.pem \
+        --private-key fileb://${path.module}/certs/private.key \
+        --region us-east-1 \
+        --output text \
+        --query 'CertificateArn')
+      echo $CERT_ARN > ${path.module}/certs/cert_arn.txt
+    EOT
+  }
+}
+
+# Read the certificate ARN from the file
+data "local_file" "cert_arn" {
+  depends_on = [null_resource.import_cert_to_acm]
+  filename   = "${path.module}/certs/cert_arn.txt"
+}
+
 # Transfer Server with custom identity provider
 resource "aws_transfer_server" "ftps_server" {
   endpoint_type         = "VPC"
   protocols             = ["FTPS"]
   identity_provider_type = "AWS_LAMBDA"
   function              = aws_lambda_function.transfer_auth_lambda.arn
+  certificate           = trimspace(data.local_file.cert_arn.content)
 
   protocol_details {
     passive_ip = "0.0.0.0"
@@ -266,12 +313,14 @@ resource "aws_iam_role_policy_attachment" "transfer_user_policy_attach" {
   policy_arn = aws_iam_policy.transfer_user_policy.arn
 }
 
-# S3 bucket for FTPS storage
+# S3 bucket for FTPS storage - with a more unique name in us-east-1
 resource "aws_s3_bucket" "ftps_bucket" {
-  bucket = "ftps-bucket"
+  bucket = "ftps-transfer-bucket-${data.aws_caller_identity.current.account_id}"  # More unique name
+  # No need for provider specification since we're using us-east-1 as the main region
 }
 
-# ... [Keep existing NLB, Target Groups, and Listeners configuration from original code] ...
+# Data source to get the current AWS account ID
+data "aws_caller_identity" "current" {}
 
 # Security Group for Windows EC2 Instance
 resource "aws_security_group" "windows_sg" {
