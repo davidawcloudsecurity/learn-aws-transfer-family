@@ -257,7 +257,7 @@ resource "aws_transfer_server" "ftps_server" {
   certificate           = trimspace(data.local_file.cert_arn.content)
 
   protocol_details {
-    passive_ip = "0.0.0.0"
+    passive_ip = local.nlb_private_ip
   }
 
   endpoint_details {
@@ -265,6 +265,8 @@ resource "aws_transfer_server" "ftps_server" {
     subnet_ids         = [aws_subnet.private.id]
     security_group_ids = [aws_security_group.transfer_sg.id]
   }
+
+  depends_on = [aws_lb.nlb]  # Ensure NLB is created first
 }
 
 # IAM Role for Transfer users
@@ -326,6 +328,33 @@ resource "aws_iam_role_policy_attachment" "transfer_user_policy_attach" {
 resource "aws_s3_bucket" "ftps_bucket" {
   bucket = "ftps-transfer-bucket-${data.aws_caller_identity.current.account_id}"  # More unique name
   # No need for provider specification since we're using us-east-1 as the main region
+}
+
+resource "aws_lb" "nlb" {
+  name               = "ftps-nlb"
+  internal           = true
+  load_balancer_type = "network"
+  subnets            = [aws_subnet.private.id]
+}
+
+data "aws_network_interfaces" "nlb_enis" {
+  depends_on = [aws_lb.nlb]
+  filter {
+    name   = "description"
+    values = ["ELB net/${aws_lb.nlb.name}/*"]
+  }
+  filter {
+    name   = "vpc-id"
+    values = [aws_vpc.main.id]
+  }
+}
+
+data "aws_network_interface" "nlb_eni" {
+  id = data.aws_network_interfaces.nlb_enis.ids[0]
+}
+
+locals {
+  nlb_private_ip = data.aws_network_interface.nlb_eni.private_ip
 }
 
 data "aws_vpc_endpoint" "transfer_endpoint" {
