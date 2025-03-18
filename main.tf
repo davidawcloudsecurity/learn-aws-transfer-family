@@ -1,5 +1,9 @@
 provider "aws" {
-  region = "us-east-1"
+  region = var.region
+}
+
+variable region {
+  default = "us-east-1"
 }
 
 # VPC
@@ -11,7 +15,7 @@ resource "aws_vpc" "main" {
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "192.168.1.0/24"
-  availability_zone       = "us-east-1a"
+  availability_zone       = "${var.region}a"
   map_public_ip_on_launch = true
 }
 
@@ -19,7 +23,7 @@ resource "aws_subnet" "public" {
 resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "192.168.2.0/24"
-  availability_zone = "us-east-1a"
+  availability_zone = "${var.region}a"
 }
 
 # Internet Gateway
