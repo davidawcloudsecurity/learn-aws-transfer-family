@@ -282,12 +282,6 @@ resource "aws_lb_target_group" "nlb_tg" {
   }
 }
 
-resource "aws_lb_target_group_attachment" "nlb_tg_attachment" {
-  target_group_arn = aws_lb_target_group.nlb_tg.arn
-  target_id        = "192.168.2.10"  # Replace with the actual IP address within the subnet range
-  port             = 21
-}
-
 # Step 3: Create the NLB
 resource "aws_lb" "nlb" {
   name               = "nlb"
@@ -510,6 +504,12 @@ data "external" "transfer_ip" {
     echo "{\"ip_address\": \"$ip_address\"}"
   EOF
   ]
+}
+
+resource "aws_lb_target_group_attachment" "nlb_tg_attachment" {
+  target_group_arn = aws_lb_target_group.nlb_tg.arn
+  target_id        = data.external.transfer_ip.result
+  port             = 21
 }
 
 output "transfer_server_ip" {
