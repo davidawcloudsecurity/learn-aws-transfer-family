@@ -505,7 +505,11 @@ resource "aws_instance" "windows" {
 }
 
 data "external" "transfer_ip" {
-  program = ["bash", "-c", "aws ec2 describe-network-interfaces --filters Name=description,Values='AWS Transfer for FTPS Server ENI' --region us-east-1 --query 'NetworkInterfaces[0].PrivateIpAddresses[0].PrivateIpAddress' --output text"]
+  program = ["bash", "-c", <<-EOF
+    ip_address=$(aws ec2 describe-network-interfaces --filters Name=description,Values='AWS Transfer for FTPS Server ENI' --region us-east-1 --query 'NetworkInterfaces[0].PrivateIpAddresses[0].PrivateIpAddress' --output text)
+    echo "{\"ip_address\": \"$ip_address\"}"
+  EOF
+  ]
 }
 
 output "transfer_server_ip" {
