@@ -508,7 +508,7 @@ data "external" "transfer_ip" {
 
 resource "aws_lb_target_group_attachment" "nlb_tg_attachment" {
   target_group_arn = aws_lb_target_group.nlb_tg.arn
-  target_id        = data.external.transfer_ip.result
+  target_id        = data.external.transfer_ip.result["ip_address"]
   port             = 21
 }
 
