@@ -117,9 +117,9 @@ resource "local_file" "lambda_source" {
           HomeDirectory: "/ftps-bucket/testuser",
           // Optional: For virtual folders
           HomeDirectoryType: "LOGICAL",
-          HomeDirectoryMappings: [
+          HomeDirectoryDetails: [
             {
-              Entry: "/",
+              Entry: "/testyser",
               Target: "/ftps-bucket/testuser"
             }
           ]
@@ -141,7 +141,7 @@ resource "local_file" "lambda_source" {
           Role: users[username].Role,
           HomeDirectory: users[username].HomeDirectory,
           HomeDirectoryType: users[username].HomeDirectoryType,
-          HomeDirectoryMappings: users[username].HomeDirectoryMappings
+          HomeDirectoryDetails: JSON.stringify(users[username].HomeDirectoryDetails)
         };
       }
       
