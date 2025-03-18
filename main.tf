@@ -498,23 +498,19 @@ resource "aws_instance" "windows" {
   }
 }
 
-data "external" "transfer_ip" {
-  program = ["bash", "-c", <<-EOF
-    ip_address=$(aws ec2 describe-network-interfaces --filters Name=description,Values='AWS Transfer for FTPS Server ENI' --region us-east-1 --query 'NetworkInterfaces[0].PrivateIpAddresses[0].PrivateIpAddress' --output text)
-    echo "{\"ip_address\": \"$ip_address\"}"
-  EOF
-  ]
+data "aws_network_interfaces" "transfer_eni" {
+  filter {
+    name   = "attachment.instance-id"
+    values = [aws_transfer_server.ftps_server.id]
+  }
+  
+  depends_on = [aws_transfer_server.ftps_server]
 }
 
 resource "aws_lb_target_group_attachment" "nlb_tg_attachment" {
   target_group_arn = aws_lb_target_group.nlb_tg.arn
-  target_id        = data.external.transfer_ip.result["ip_address"]
+  target_id        = tolist(data.aws_network_interfaces.transfer_eni.ids)[0]
   port             = 21
-
-  depends_on = [
-    aws_lb_target_group.nlb_tg,
-    data.external.transfer_ip
-  ]
 }
 
 
