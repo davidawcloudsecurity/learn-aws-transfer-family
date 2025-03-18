@@ -53,7 +53,7 @@ resource "aws_security_group" "transfer_sg" {
     from_port   = 21
     to_port     = 21
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]  # Allow from NLB
+    cidr_blocks = [aws_subnet.private.cidr_block]
   }
 
   dynamic "ingress" {
@@ -62,7 +62,7 @@ resource "aws_security_group" "transfer_sg" {
       from_port   = ingress.value
       to_port     = ingress.value
       protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]  # Allow from NLB
+      cidr_blocks = [aws_subnet.private.cidr_block]
     }
   }
 
@@ -248,199 +248,22 @@ data "local_file" "cert_arn" {
   filename   = "${path.module}/certs/cert_arn.txt"
 }
 
-# Add a Network Load Balancer for the Transfer server
-resource "aws_lb" "transfer_nlb" {
-  name               = "transfer-nlb"
-  internal           = true
-  load_balancer_type = "network"
-  subnets            = [aws_subnet.public.id]
-
-  enable_cross_zone_load_balancing = true
-}
-
-# Add listener for the NLB
-resource "aws_lb_listener" "ftps_listener" {
-  load_balancer_arn = aws_lb.transfer_nlb.arn
-  port              = 21
-  protocol          = "TLS"
-  certificate_arn   = trimspace(data.local_file.cert_arn.content)
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.transfer_tg.arn
-  }
-}
-
-# Add passive port listeners (for FTPS data connections)
-resource "aws_lb_listener" "ftps_passive_listeners" {
-  count             = 9
-  load_balancer_arn = aws_lb.transfer_nlb.arn
-  port              = 8192 + count.index
-  protocol          = "TLS"
-  certificate_arn   = trimspace(data.local_file.cert_arn.content)
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.transfer_passive_tg[count.index].arn
-  }
-}
-
-# Create target groups for the Transfer server
-resource "aws_lb_target_group" "transfer_tg" {
-  name     = "transfer-tg"
-  port     = 21
-  protocol = "TCP"
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    protocol = "TCP"
-    port     = 21
-  }
-}
-
-# Create target groups for passive ports
-resource "aws_lb_target_group" "transfer_passive_tg" {
-  count    = 9
-  name     = "transfer-passive-tg-${8192 + count.index}"
-  port     = 8192 + count.index
-  protocol = "TCP"
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    protocol = "TCP"
-    port     = 8192 + count.index
-  }
-}
-
-# Modify the Transfer server configuration
+# Transfer Server with custom identity provider
 resource "aws_transfer_server" "ftps_server" {
-  endpoint_type          = "VPC"
-  protocols              = ["FTPS"]
+  endpoint_type         = "VPC"
+  protocols             = ["FTPS"]
   identity_provider_type = "AWS_LAMBDA"
-  function               = aws_lambda_function.transfer_auth_lambda.arn
-  certificate            = trimspace(data.local_file.cert_arn.content)
-  
+  function              = aws_lambda_function.transfer_auth_lambda.arn
+  certificate           = trimspace(data.local_file.cert_arn.content)
+
   protocol_details {
-    passive_ip = aws_lb.transfer_nlb.dns_name  # Use NLB DNS name as passive IP
-    }
+    passive_ip = "0.0.0.0"
   }
 
   endpoint_details {
     vpc_id             = aws_vpc.main.id
     subnet_ids         = [aws_subnet.private.id]
     security_group_ids = [aws_security_group.transfer_sg.id]
-    address_allocation_ids = []  # Required for VPC_ENDPOINT type
-  }
-
-  tags = {
-    Name = "FTPS-Server"
-  }
-}
-
-# Target group attachments for the Transfer server
-resource "aws_lb_target_group_attachment" "transfer_tg_attachment" {
-  target_group_arn = aws_lb_target_group.transfer_tg.arn
-  target_id        = aws_transfer_server.ftps_server.id
-  port             = 21
-}
-
-resource "aws_lb_target_group_attachment" "transfer_passive_tg_attachment" {
-  count            = 9
-  target_group_arn = aws_lb_target_group.transfer_passive_tg[count.index].arn
-  target_id        = aws_transfer_server.ftps_server.id
-  port             = 8192 + count.index
-}
-
-# Update security group to allow traffic from the NLB to the Transfer server
-resource "aws_security_group_rule" "transfer_from_nlb" {
-  type              = "ingress"
-  from_port         = 21
-  to_port           = 21
-  protocol          = "tcp"
-  security_group_id = aws_security_group.transfer_sg.id
-  source_security_group_id = aws_security_group.nlb_sg.id
-}
-
-# Create a security group for the NLB
-resource "aws_security_group" "nlb_sg" {
-  name        = "nlb-sg"
-  description = "Security group for the NLB"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    from_port   = 21
-    to_port     = 21
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  dynamic "ingress" {
-    for_each = [for port in range(8192, 8201) : port]
-    content {
-      from_port   = ingress.value
-      to_port     = ingress.value
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    }
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-# Create VPC endpoint for Transfer server
-resource "aws_vpc_endpoint" "transfer_endpoint" {
-  vpc_id              = aws_vpc.main.id
-  service_name        = aws_vpc_endpoint_service.transfer_endpoint_service.service_name
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.private.id]
-  security_group_ids  = [aws_security_group.transfer_sg.id]
-  private_dns_enabled = false
-}
-
-# Register the Transfer server VPC endpoint with NLB target groups
-resource "aws_vpc_endpoint_service" "transfer_endpoint_service" {
-  acceptance_required        = false
-  network_load_balancer_arns = [aws_lb.transfer_nlb.arn]
-}
-
-# Add a private hosted zone for the custom domain
-resource "aws_route53_zone" "private_zone" {
-  name = "example.com"
-  
-  vpc {
-    vpc_id = aws_vpc.main.id
-  }
-}
-
-# Add a record in the private hosted zone
-resource "aws_route53_record" "transfer_private_record" {
-  zone_id = aws_route53_zone.private_zone.zone_id
-  name    = "transfer.example.com"
-  type    = "CNAME"
-  ttl     = 300
-  records = [aws_lb.transfer_nlb.dns_name]
-}
-
-# Add a public hosted zone if needed
-resource "aws_route53_zone" "public_zone" {
-  name = "example.com"
-}
-
-# Add a record in the public hosted zone
-resource "aws_route53_record" "transfer_public_record" {
-  zone_id = aws_route53_zone.public_zone.zone_id
-  name    = "transfer.example.com"
-  type    = "A"
-  
-  alias {
-    name                   = aws_lb.transfer_nlb.dns_name
-    zone_id                = aws_lb.transfer_nlb.zone_id
-    evaluate_target_health = true
   }
 }
 
@@ -601,24 +424,11 @@ resource "aws_instance" "windows" {
     net localgroup Administrators admin2 /add
     mkdir c:\temp
     cd c:\temp
-    curl -LO https://cdn.winscp.net/files/WinSCP-6.3.7-Setup.exe?secure=jGMLrV3pq9qv-RgLRgy79Q==,1742292820
+    curl -LO https://cdn.winscp.net/files/WinSCP-6.3.7-Setup.exe?secure=yiG28rtqKcUdG1Q0Dc6WyQ==,1742122915
     </script>
   EOT
 
   tags = {
     Name = "WinSCP-Client"
   }
-}
-
-# Output the hostname and endpoint
-output "transfer_hostname" {
-  value = aws_transfer_server.ftps_server.hostname
-}
-
-output "transfer_endpoint" {
-  value = aws_lb.transfer_nlb.dns_name
-}
-
-output "transfer_endpoint_service" {
-  value = aws_vpc_endpoint_service.transfer_endpoint_service.service_name
 }
