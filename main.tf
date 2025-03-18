@@ -313,23 +313,57 @@ data "local_file" "cert_arn" {
   filename   = "${path.module}/certs/cert_arn.txt"
 }
 
-# Transfer Server with custom identity provider
+# Create a VPC Endpoint for Transfer Service
+resource "aws_vpc_endpoint" "transfer_endpoint" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.us-east-1.transfer.server"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private.id]
+  security_group_ids  = [aws_security_group.transfer_sg.id]
+  private_dns_enabled = false
+}
+
+# Modify your Transfer Server to use the VPC Endpoint
 resource "aws_transfer_server" "ftps_server" {
-  endpoint_type         = "VPC"
-  protocols             = ["FTPS"]
+  endpoint_type        = "VPC_ENDPOINT"
+  protocols            = ["FTPS"]
   identity_provider_type = "AWS_LAMBDA"
-  function              = aws_lambda_function.transfer_auth_lambda.arn
-  certificate           = trimspace(data.local_file.cert_arn.content)
+  function             = aws_lambda_function.transfer_auth_lambda.arn
+  certificate          = trimspace(data.local_file.cert_arn.content)
+
+  endpoint_details {
+    vpc_endpoint_id = aws_vpc_endpoint.transfer_endpoint.id
+  }
 
   protocol_details {
     passive_ip = "0.0.0.0"
   }
+}
 
-  endpoint_details {
-    vpc_id             = aws_vpc.main.id
-    subnet_ids         = [aws_subnet.private.id]
-    security_group_ids = [aws_security_group.transfer_sg.id]
+# For the NLB, you would then target the VPC endpoint network interfaces
+data "aws_network_interface" "transfer_endpoint_eni" {
+  depends_on = [aws_vpc_endpoint.transfer_endpoint]
+  
+  filter {
+    name   = "vpc-id"
+    values = [aws_vpc.main.id]
   }
+  
+  filter {
+    name   = "group-id" 
+    values = [aws_security_group.transfer_sg.id]
+  }
+  
+  filter {
+    name   = "description"
+    values = ["*com.amazonaws.us-east-1.transfer.server*"]
+  }
+}
+
+resource "aws_lb_target_group_attachment" "nlb_tg_attachment" {
+  target_group_arn = aws_lb_target_group.nlb_tg.arn
+  target_id        = data.aws_network_interface.transfer_endpoint_eni.private_ip
+  port             = 21
 }
 
 # IAM Role for Transfer users
@@ -496,19 +530,4 @@ resource "aws_instance" "windows" {
   tags = {
     Name = "WinSCP-Client"
   }
-}
-
-data "aws_network_interfaces" "transfer_eni" {
-  filter {
-    name   = "attachment.instance-id"
-    values = [aws_transfer_server.ftps_server.id]
-  }
-  
-  depends_on = [aws_transfer_server.ftps_server]
-}
-
-resource "aws_lb_target_group_attachment" "nlb_tg_attachment" {
-  target_group_arn = aws_lb_target_group.nlb_tg.arn
-  target_id        = tolist(data.aws_network_interfaces.transfer_eni.ids)[0]
-  port             = 21
 }
