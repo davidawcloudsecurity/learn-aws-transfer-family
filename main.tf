@@ -266,17 +266,23 @@ resource "aws_security_group" "nlb_sg" {
 # Step 2: Create a Target Group for the NLB
 resource "aws_lb_target_group" "nlb_tg" {
   name        = "nlb-tg"
-  port        = 443
+  port        = 21
   protocol    = "TLS"
   vpc_id      = aws_vpc.main.id
-  target_type = "ip"
+  target_type = "IP"
+
+  target {
+    id   = "10.0.1.1"  # Example IP address
+    port = 21
+  }
+
   health_check {
     enabled             = true
     matcher             = "200"
     interval            = 30
     path                = "/"
     port                = "traffic-port"
-    protocol            = "HTTPS"
+    protocol            = "TCP"
     timeout             = 5
     unhealthy_threshold = 2
     healthy_threshold   = 2
