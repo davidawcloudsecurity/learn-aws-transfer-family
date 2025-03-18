@@ -432,3 +432,7 @@ resource "aws_instance" "windows" {
     Name = "WinSCP-Client"
   }
 }
+
+output "nlb_dns_name" {
+  value = aws_lb.nlb.dns_name
+}
