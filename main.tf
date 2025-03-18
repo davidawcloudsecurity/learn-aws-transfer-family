@@ -248,6 +248,70 @@ data "local_file" "cert_arn" {
   filename   = "${path.module}/certs/cert_arn.txt"
 }
 
+# Add a Network Load Balancer for the Transfer server
+resource "aws_lb" "transfer_nlb" {
+  name               = "transfer-nlb"
+  internal           = false
+  load_balancer_type = "network"
+  subnets            = [aws_subnet.public.id]
+
+  enable_cross_zone_load_balancing = true
+}
+
+# Add listener for the NLB
+resource "aws_lb_listener" "ftps_listener" {
+  load_balancer_arn = aws_lb.transfer_nlb.arn
+  port              = 21
+  protocol          = "TLS"
+  certificate_arn   = trimspace(data.local_file.cert_arn.content)
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.transfer_tg.arn
+  }
+}
+
+# Add passive port listeners (for FTPS data connections)
+resource "aws_lb_listener" "ftps_passive_listeners" {
+  count             = 9
+  load_balancer_arn = aws_lb.transfer_nlb.arn
+  port              = 8192 + count.index
+  protocol          = "TLS"
+  certificate_arn   = trimspace(data.local_file.cert_arn.content)
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.transfer_passive_tg[count.index].arn
+  }
+}
+
+# Create target groups for the Transfer server
+resource "aws_lb_target_group" "transfer_tg" {
+  name     = "transfer-tg"
+  port     = 21
+  protocol = "TCP"
+  vpc_id   = aws_vpc.main.id
+
+  health_check {
+    protocol = "TCP"
+    port     = 21
+  }
+}
+
+# Create target groups for passive ports
+resource "aws_lb_target_group" "transfer_passive_tg" {
+  count    = 9
+  name     = "transfer-passive-tg-${8192 + count.index}"
+  port     = 8192 + count.index
+  protocol = "TCP"
+  vpc_id   = aws_vpc.main.id
+
+  health_check {
+    protocol = "TCP"
+    port     = 8192 + count.index
+  }
+}
+
 # Transfer Server with custom identity provider
 resource "aws_transfer_server" "ftps_server" {
   endpoint_type         = "VPC"
