@@ -424,7 +424,7 @@ resource "aws_instance" "windows" {
     net localgroup Administrators admin2 /add
     mkdir c:\temp
     cd c:\temp
-    curl -LO https://cdn.winscp.net/files/WinSCP-6.3.7-Setup.exe?secure=yiG28rtqKcUdG1Q0Dc6WyQ==,1742122915
+    curl -LO https://cdn.winscp.net/files/WinSCP-6.3.7-Setup.exe?secure=jGMLrV3pq9qv-RgLRgy79Q==,1742292820
     </script>
   EOT
 
