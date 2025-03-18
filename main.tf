@@ -269,7 +269,7 @@ resource "aws_lb_target_group" "nlb_tg" {
   port        = 21
   protocol    = "TCP"
   vpc_id      = aws_vpc.main.id
-  target_type = "IP"
+  target_type = "ip"
 
   health_check {
     enabled             = true
