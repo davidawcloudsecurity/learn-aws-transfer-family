@@ -504,3 +504,11 @@ resource "aws_instance" "windows" {
     Name = "WinSCP-Client"
   }
 }
+
+data "external" "transfer_ip" {
+  program = ["bash", "-c", "aws ec2 describe-network-interfaces --filters Name=description,Values='AWS Transfer for FTPS Server ENI' --region us-east-1 --query 'NetworkInterfaces[0].PrivateIpAddresses[0].PrivateIpAddress' --output text"]
+}
+
+output "transfer_server_ip" {
+  value = data.external.transfer_ip.result
+}
