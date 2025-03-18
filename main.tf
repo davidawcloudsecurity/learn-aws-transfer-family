@@ -108,7 +108,7 @@ resource "local_file" "lambda_source" {
       // Sample user configurations - in production, store these in a database or AWS Secrets Manager
       const users = {
         "testuser": {
-          Password: "StrongPassword123!",
+          Password: "password",
           Role: "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/transfer-user-role",
           HomeDirectory: "/ftps-bucket/testuser",
           // Optional: For virtual folders
