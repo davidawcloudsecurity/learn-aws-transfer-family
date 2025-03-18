@@ -512,9 +512,3 @@ resource "aws_lb_target_group_attachment" "nlb_tg_attachment" {
   target_id        = tolist(data.aws_network_interfaces.transfer_eni.ids)[0]
   port             = 21
 }
-
-
-
-output "transfer_server_ip" {
-  value = data.external.transfer_ip.result
-}
