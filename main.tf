@@ -46,23 +46,23 @@ resource "aws_route_table_association" "public" {
 # Security Group for Transfer Server
 resource "aws_security_group" "transfer_sg" {
   name        = "transfer-sg"
-  description = "Allow FTPS traffic from Windows EC2"
+  description = "Allow FTPS traffic from NLB"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port       = 21
-    to_port         = 21
-    protocol        = "tcp"
-    security_groups = [aws_security_group.windows_sg.id]
+    from_port   = 21
+    to_port     = 21
+    protocol    = "tcp"
+    cidr_blocks = [aws_subnet.private.cidr_block]
   }
 
   dynamic "ingress" {
     for_each = [for port in range(8192, 8201) : port]
     content {
-      from_port       = ingress.value
-      to_port         = ingress.value
-      protocol        = "tcp"
-      security_groups = [aws_security_group.windows_sg.id]
+      from_port   = ingress.value
+      to_port     = ingress.value
+      protocol    = "tcp"
+      cidr_blocks = [aws_subnet.private.cidr_block]
     }
   }
 
@@ -257,7 +257,7 @@ resource "aws_transfer_server" "ftps_server" {
   certificate           = trimspace(data.local_file.cert_arn.content)
 
   protocol_details {
-    passive_ip = local.nlb_private_ip
+    passive_ip = "0.0.0.0"
   }
 
   endpoint_details {
@@ -265,8 +265,6 @@ resource "aws_transfer_server" "ftps_server" {
     subnet_ids         = [aws_subnet.private.id]
     security_group_ids = [aws_security_group.transfer_sg.id]
   }
-
-  depends_on = [aws_lb.nlb]  # Ensure NLB is created first
 }
 
 # IAM Role for Transfer users
@@ -330,102 +328,13 @@ resource "aws_s3_bucket" "ftps_bucket" {
   # No need for provider specification since we're using us-east-1 as the main region
 }
 
-resource "aws_lb" "nlb" {
-  name               = "ftps-nlb"
-  internal           = true
-  load_balancer_type = "network"
-  subnets            = [aws_subnet.private.id]
-}
-
-data "aws_network_interfaces" "nlb_enis" {
-  depends_on = [aws_lb.nlb]
-  filter {
-    name   = "description"
-    values = ["ELB net/${aws_lb.nlb.name}/*"]
-  }
-  filter {
-    name   = "vpc-id"
-    values = [aws_vpc.main.id]
-  }
-}
-
-data "aws_network_interface" "nlb_eni" {
-  id = data.aws_network_interfaces.nlb_enis.ids[0]
-}
-
-locals {
-  nlb_private_ip = data.aws_network_interface.nlb_eni.private_ip
-}
-
-data "aws_vpc_endpoint" "transfer_endpoint" {
-  id = aws_transfer_server.ftps_server.endpoint_details[0].vpc_endpoint_id
-}
-
-data "aws_network_interface" "transfer_eni" {
-  id = tolist(data.aws_vpc_endpoint.transfer_endpoint.network_interface_ids)[0]
-}
-
-locals {
-  transfer_eni_ip = data.aws_network_interface.transfer_eni.private_ip
-}
-
-resource "aws_lb_target_group" "control" {
-  name        = "ftps-control-tg"
-  port        = 21
-  protocol    = "TCP"
-  target_type = "ip"
-  vpc_id      = aws_vpc.main.id
-}
-
-resource "aws_lb_target_group_attachment" "control_attach" {
-  target_group_arn = aws_lb_target_group.control.arn
-  target_id        = local.transfer_eni_ip
-  port             = 21
-}
-
-resource "aws_lb_target_group" "passive" {
-  for_each = toset([for port in range(8192, 8202) : tostring(port)])  # 8192 to 8201 inclusive
-  name        = "ftps-passive-${each.key}-tg"
-  port        = each.key
-  protocol    = "TCP"
-  target_type = "ip"
-  vpc_id      = aws_vpc.main.id
-}
-
-resource "aws_lb_target_group_attachment" "passive_attach" {
-  for_each         = aws_lb_target_group.passive
-  target_group_arn = each.value.arn
-  target_id        = local.transfer_eni_ip
-  port             = tonumber(each.key)
-}
-
-resource "aws_lb_listener" "control_listener" {
-  load_balancer_arn = aws_lb.nlb.arn
-  port              = 443
-  protocol          = "TCP"
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.control.arn
-  }
-}
-
-resource "aws_lb_listener" "passive_listeners" {
-  for_each          = aws_lb_target_group.passive
-  load_balancer_arn = aws_lb.nlb.arn
-  port              = each.key
-  protocol          = "TCP"
-  default_action {
-    type             = "forward"
-    target_group_arn = each.value.arn
-  }
-}
-
 # Security Group for Windows EC2 Instance
 resource "aws_security_group" "windows_sg" {
   name        = "windows-sg"
   description = "Allow RDP and FTPS access"
   vpc_id      = aws_vpc.main.id
 
+  # Allow RDP from your IP
   ingress {
     from_port   = 3389
     to_port     = 3389
@@ -433,6 +342,7 @@ resource "aws_security_group" "windows_sg" {
     cidr_blocks = [aws_subnet.private.cidr_block]
   }
 
+  # Allow outbound to NLB
   egress {
     from_port   = 443
     to_port     = 443
@@ -442,7 +352,7 @@ resource "aws_security_group" "windows_sg" {
 
   egress {
     from_port   = 8192
-    to_port     = 8201  # Corrected to match 8192-8201 range
+    to_port     = 8200
     protocol    = "tcp"
     cidr_blocks = [aws_subnet.private.cidr_block]
   }
@@ -521,8 +431,4 @@ resource "aws_instance" "windows" {
   tags = {
     Name = "WinSCP-Client"
   }
-}
-
-output "nlb_dns_name" {
-  value = aws_lb.nlb.dns_name
 }
