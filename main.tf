@@ -242,6 +242,72 @@ resource "null_resource" "import_cert_to_acm" {
   }
 }
 
+# Step 1: Create a new Security Group for the NLB
+resource "aws_security_group" "nlb_sg" {
+  name        = "nlb-sg"
+  description = "Allow TLS traffic"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# Step 2: Create a Target Group for the NLB
+resource "aws_lb_target_group" "nlb_tg" {
+  name        = "nlb-tg"
+  port        = 443
+  protocol    = "TLS"
+  vpc_id      = aws_vpc.main.id
+  target_type = "instance"
+  health_check {
+    enabled             = true
+    matcher             = "200"
+    interval            = 30
+    path                = "/"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 2
+    healthy_threshold   = 2
+  }
+}
+
+# Step 3: Create the NLB
+resource "aws_lb" "nlb" {
+  name               = "nlb"
+  internal           = false
+  load_balancer_type = "network"
+  security_groups    = [aws_security_group.nlb_sg.id]
+  subnets            = [aws_subnet.public.id]
+
+  enable_deletion_protection = false
+}
+
+# Step 4: Create a Listener for the NLB
+resource "aws_lb_listener" "nlb_listener" {
+  load_balancer_arn = aws_lb.nlb.arn
+  port              = 443
+  protocol          = "TLS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = trimspace(data.local_file.cert_arn.content)
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.nlb_tg.arn
+  }
+}
+
 # Read the certificate ARN from the file
 data "local_file" "cert_arn" {
   depends_on = [null_resource.import_cert_to_acm]
