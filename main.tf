@@ -273,7 +273,6 @@ resource "aws_lb_target_group" "nlb_tg" {
 
   health_check {
     enabled             = true
-    matcher             = "200"
     interval            = 30
     path                = "/"
     port                = "traffic-port"
