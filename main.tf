@@ -23,7 +23,7 @@ resource "aws_subnet" "public" {
 resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "192.168.2.0/24"
-  availability_zone = "${var.region}a"
+  availability_zone = "${var.region}b"
 }
 
 # Internet Gateway
