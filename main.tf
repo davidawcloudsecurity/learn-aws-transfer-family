@@ -274,7 +274,6 @@ resource "aws_lb_target_group" "nlb_tg" {
   health_check {
     enabled             = true
     interval            = 30
-    path                = "/"
     port                = "traffic-port"
     protocol            = "TCP"
     timeout             = 5
