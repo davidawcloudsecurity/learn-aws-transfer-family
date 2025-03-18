@@ -46,23 +46,23 @@ resource "aws_route_table_association" "public" {
 # Security Group for Transfer Server
 resource "aws_security_group" "transfer_sg" {
   name        = "transfer-sg"
-  description = "Allow FTPS traffic from NLB"
+  description = "Allow FTPS traffic from Windows EC2"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port   = 21
-    to_port     = 21
-    protocol    = "tcp"
-    cidr_blocks = [aws_subnet.private.cidr_block]
+    from_port       = 21
+    to_port         = 21
+    protocol        = "tcp"
+    security_groups = [aws_security_group.windows_sg.id]
   }
 
   dynamic "ingress" {
     for_each = [for port in range(8192, 8201) : port]
     content {
-      from_port   = ingress.value
-      to_port     = ingress.value
-      protocol    = "tcp"
-      cidr_blocks = [aws_subnet.private.cidr_block]
+      from_port       = ingress.value
+      to_port         = ingress.value
+      protocol        = "tcp"
+      security_groups = [aws_security_group.windows_sg.id]
     }
   }
 
@@ -334,7 +334,6 @@ resource "aws_security_group" "windows_sg" {
   description = "Allow RDP and FTPS access"
   vpc_id      = aws_vpc.main.id
 
-  # Allow RDP from your IP
   ingress {
     from_port   = 3389
     to_port     = 3389
@@ -342,7 +341,6 @@ resource "aws_security_group" "windows_sg" {
     cidr_blocks = [aws_subnet.private.cidr_block]
   }
 
-  # Allow outbound to NLB
   egress {
     from_port   = 443
     to_port     = 443
@@ -352,7 +350,7 @@ resource "aws_security_group" "windows_sg" {
 
   egress {
     from_port   = 8192
-    to_port     = 8200
+    to_port     = 8201  # Corrected to match 8192-8201 range
     protocol    = "tcp"
     cidr_blocks = [aws_subnet.private.cidr_block]
   }
