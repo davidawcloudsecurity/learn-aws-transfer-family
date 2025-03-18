@@ -267,7 +267,7 @@ resource "aws_security_group" "nlb_sg" {
 resource "aws_lb_target_group" "nlb_tg" {
   name        = "nlb-tg"
   port        = 21
-  protocol    = "TLS"
+  protocol    = "TCP"
   vpc_id      = aws_vpc.main.id
   target_type = "IP"
 
