@@ -269,7 +269,7 @@ resource "aws_lb_target_group" "nlb_tg" {
   port        = 443
   protocol    = "TLS"
   vpc_id      = aws_vpc.main.id
-  target_type = "instance"
+  target_type = "ip"
   health_check {
     enabled             = true
     matcher             = "200"
