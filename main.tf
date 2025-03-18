@@ -271,11 +271,6 @@ resource "aws_lb_target_group" "nlb_tg" {
   vpc_id      = aws_vpc.main.id
   target_type = "IP"
 
-  target {
-    id   = "10.0.1.1"  # Example IP address
-    port = 21
-  }
-
   health_check {
     enabled             = true
     matcher             = "200"
@@ -289,10 +284,16 @@ resource "aws_lb_target_group" "nlb_tg" {
   }
 }
 
+resource "aws_lb_target_group_attachment" "nlb_tg_attachment" {
+  target_group_arn = aws_lb_target_group.nlb_tg.arn
+  target_id        = "192.168.2.10"  # Replace with the actual IP address within the subnet range
+  port             = 21
+}
+
 # Step 3: Create the NLB
 resource "aws_lb" "nlb" {
   name               = "nlb"
-  internal           = false
+  internal           = true
   load_balancer_type = "network"
   security_groups    = [aws_security_group.nlb_sg.id]
   subnets            = [aws_subnet.public.id]
