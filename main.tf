@@ -114,8 +114,6 @@ resource "local_file" "lambda_source" {
         "testuser": {
           Password: "password",
           Role: "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/transfer-user-role",
-          HomeDirectory: "/ftps-bucket/testuser",
-          // Optional: For virtual folders
           HomeDirectoryType: "LOGICAL",
           HomeDirectoryDetails: [
             {
