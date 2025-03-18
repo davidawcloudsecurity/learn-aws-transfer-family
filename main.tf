@@ -276,7 +276,7 @@ resource "aws_lb_target_group" "nlb_tg" {
     interval            = 30
     path                = "/"
     port                = "traffic-port"
-    protocol            = "HTTP"
+    protocol            = "HTTPS"
     timeout             = 5
     unhealthy_threshold = 2
     healthy_threshold   = 2
