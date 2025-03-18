@@ -319,12 +319,9 @@ resource "aws_transfer_server" "ftps_server" {
   identity_provider_type = "AWS_LAMBDA"
   function               = aws_lambda_function.transfer_auth_lambda.arn
   certificate            = trimspace(data.local_file.cert_arn.content)
-  hostname               = "transfer.example.com"  # Add custom hostname
   
   protocol_details {
     passive_ip = aws_lb.transfer_nlb.dns_name  # Use NLB DNS name as passive IP
-    ftps_protocol_details {
-      tls_session_resumption_mode = "ENFORCED"
     }
   }
 
