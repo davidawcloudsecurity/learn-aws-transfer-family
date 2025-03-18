@@ -362,7 +362,7 @@ data "aws_vpc_endpoint" "transfer_endpoint" {
 }
 
 data "aws_network_interface" "transfer_eni" {
-  id = data.aws_vpc_endpoint.transfer_endpoint.network_interface_ids[0]
+  id = tolist(data.aws_vpc_endpoint.transfer_endpoint.network_interface_ids)[0]
 }
 
 locals {
