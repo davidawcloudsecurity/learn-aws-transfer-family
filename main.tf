@@ -53,7 +53,7 @@ resource "aws_security_group" "transfer_sg" {
     from_port   = 21
     to_port     = 21
     protocol    = "tcp"
-    cidr_blocks = [aws_subnet.private.cidr_block]
+    cidr_blocks = ["0.0.0.0/0"]  # Allow from NLB
   }
 
   dynamic "ingress" {
@@ -62,7 +62,7 @@ resource "aws_security_group" "transfer_sg" {
       from_port   = ingress.value
       to_port     = ingress.value
       protocol    = "tcp"
-      cidr_blocks = [aws_subnet.private.cidr_block]
+      cidr_blocks = ["0.0.0.0/0"]  # Allow from NLB
     }
   }
 
@@ -251,7 +251,7 @@ data "local_file" "cert_arn" {
 # Add a Network Load Balancer for the Transfer server
 resource "aws_lb" "transfer_nlb" {
   name               = "transfer-nlb"
-  internal           = false
+  internal           = true
   load_balancer_type = "network"
   subnets            = [aws_subnet.public.id]
 
@@ -312,22 +312,54 @@ resource "aws_lb_target_group" "transfer_passive_tg" {
   }
 }
 
-# Transfer Server with custom identity provider
+# Modify the Transfer server configuration
 resource "aws_transfer_server" "ftps_server" {
-  endpoint_type         = "VPC"
-  protocols             = ["FTPS"]
+  endpoint_type          = "VPC_ENDPOINT"  # Changed from VPC to VPC_ENDPOINT
+  protocols              = ["FTPS"]
   identity_provider_type = "AWS_LAMBDA"
-  function              = aws_lambda_function.transfer_auth_lambda.arn
-  certificate           = trimspace(data.local_file.cert_arn.content)
-
+  function               = aws_lambda_function.transfer_auth_lambda.arn
+  certificate            = trimspace(data.local_file.cert_arn.content)
+  hostname               = "transfer.example.com"  # Add custom hostname
+  
   protocol_details {
-    passive_ip = "0.0.0.0"
+    passive_ip = aws_lb.transfer_nlb.dns_name  # Use NLB DNS name as passive IP
+    ftps_protocol_details {
+      tls_session_resumption_mode = "ENFORCED"
+    }
   }
 
   endpoint_details {
     vpc_id             = aws_vpc.main.id
     subnet_ids         = [aws_subnet.private.id]
     security_group_ids = [aws_security_group.transfer_sg.id]
+    address_allocation_ids = []  # Required for VPC_ENDPOINT type
+  }
+
+  tags = {
+    Name = "FTPS-Server"
+  }
+}
+
+# Register the Transfer server VPC endpoint with NLB target groups
+resource "aws_vpc_endpoint_service" "transfer_endpoint_service" {
+  acceptance_required        = false
+  network_load_balancer_arns = [aws_lb.transfer_nlb.arn]
+}
+
+# Add Route 53 record (optional, if you want a custom domain)
+resource "aws_route53_zone" "transfer_zone" {
+  name = "example.com"
+}
+
+resource "aws_route53_record" "transfer_record" {
+  zone_id = aws_route53_zone.transfer_zone.zone_id
+  name    = "transfer.example.com"
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.transfer_nlb.dns_name
+    zone_id                = aws_lb.transfer_nlb.zone_id
+    evaluate_target_health = true
   }
 }
 
@@ -495,4 +527,13 @@ resource "aws_instance" "windows" {
   tags = {
     Name = "WinSCP-Client"
   }
+}
+
+# Output the hostname and endpoint
+output "transfer_hostname" {
+  value = aws_transfer_server.ftps_server.hostname
+}
+
+output "transfer_endpoint" {
+  value = aws_lb.transfer_nlb.dns_name
 }
